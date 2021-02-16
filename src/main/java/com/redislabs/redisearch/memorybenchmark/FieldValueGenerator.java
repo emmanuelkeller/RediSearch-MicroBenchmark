@@ -5,7 +5,6 @@ import com.redislabs.redisearch.memorybenchmark.utils.MarkovChain;
 import java.io.IOException;
 import java.util.*;
 import java.util.function.Supplier;
-import java.util.stream.Collectors;
 
 public class FieldValueGenerator {
 
@@ -13,7 +12,7 @@ public class FieldValueGenerator {
     private final MarkovChain markovChain;
     private final Map<String, Supplier<String>> fieldGenerators;
 
-    public FieldValueGenerator(Schema schema) throws IOException {
+    public FieldValueGenerator(BenchmarkSchema schema) {
         random = new Random();
         markovChain = MarkovChain.of();
         fieldGenerators = new HashMap<>();

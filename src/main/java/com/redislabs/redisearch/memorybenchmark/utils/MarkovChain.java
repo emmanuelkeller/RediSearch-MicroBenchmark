@@ -36,10 +36,12 @@ public class MarkovChain {
         }
     }
 
-    public static MarkovChain of() throws IOException {
+    public static MarkovChain of() {
         try (final InputStream inputStream = MarkovChain.class.getResourceAsStream("alice_oz.txt")) {
             byte[] bytes = inputStream.readAllBytes();
             return new MarkovChain(new String(bytes, StandardCharsets.US_ASCII), 1);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
         }
     }
 

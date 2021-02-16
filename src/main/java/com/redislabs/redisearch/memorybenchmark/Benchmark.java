@@ -1,62 +1,81 @@
 package com.redislabs.redisearch.memorybenchmark;
 
-import io.redisearch.client.Client;
-import redis.clients.jedis.BinaryJedis;
-import redis.clients.jedis.Jedis;
+import io.redisearch.Schema;
 
 import java.io.Closeable;
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 public class Benchmark implements Closeable {
 
-    private static final String INDEX_NAME = "benchmark";
+    public static final String DOC_PREFIX = "d:";
+    public static final String INDEX_NAME = "benchmark";
 
     private final FieldValueGenerator fieldValueGenerator;
-    private final Schema schema;
-    private final List<Jedis> jedisClients;
-    private final List<Client> jedisSearchClients;
+    private final BenchmarkSchema benchmarkSchema;
+    private final List<BenchmarkClient> clients;
 
-    public Benchmark(Schema schema) throws IOException {
-        this.fieldValueGenerator = new FieldValueGenerator(schema);
-        this.schema = schema;
-        jedisClients = new ArrayList<>(schema.redisEndpoints.size());
-        jedisSearchClients = new ArrayList<>(schema.redisEndpoints.size());
-        for (Schema.Endpoint endpoint : schema.redisEndpoints) {
-            jedisClients.add(new Jedis(endpoint.hostname, endpoint.port));
-            jedisSearchClients.add(new Client(INDEX_NAME, endpoint.hostname, endpoint.port));
+    public Benchmark(BenchmarkSchema benchmarkSchema) {
+        this.fieldValueGenerator = new FieldValueGenerator(benchmarkSchema);
+        this.benchmarkSchema = benchmarkSchema;
+        clients = new ArrayList<>(benchmarkSchema.redisEndpoints.size());
+        for (BenchmarkSchema.Endpoint endpoint : benchmarkSchema.redisEndpoints) {
+            clients.add(new BenchmarkClient(endpoint, INDEX_NAME));
         }
     }
 
     public void execute() {
-        jedisClients.forEach(BinaryJedis::flushDB);
+        init();
         createHashes();
+        createSchema();
+        publishResults();
     }
 
     private Map<String, String> getNewHash() {
         final Map<String, String> hash = new HashMap<>();
-        schema.fields.forEach((name, field) -> {
+        benchmarkSchema.fields.forEach((name, field) -> {
             hash.put(name, fieldValueGenerator.generateValue(name));
         });
         return hash;
     }
 
-    public void createHashes() {
-        for (int i = 1; i <= schema.numberOfDocuments; i++) {
-            final String key = "doc:" + i;
-            for (Jedis client : jedisClients) {
+    private void init() {
+        clients.forEach(client -> {
+            client.flushEverything();
+            client.getResultBuilder()
+                    .initialMemory(client.collectUsedMemory())
+                    .numDoc(benchmarkSchema.numberOfDocuments);
+        });
+    }
+
+    private void createHashes() {
+        for (int i = 1; i <= benchmarkSchema.numberOfDocuments; i++) {
+            final String key = DOC_PREFIX + i;
+            for (BenchmarkClient client : clients) {
                 client.hset(key, getNewHash());
+                client.getResultBuilder().postHashMemory(client.collectUsedMemory());
             }
         }
     }
 
+    private void createSchema() {
+        final Schema schema = new Schema();
+        benchmarkSchema.fields.forEach((name, options) -> options.applySchema(name, schema));
+        clients.forEach(client -> client.createIndex(DOC_PREFIX, schema));
+        clients.forEach(client -> {
+            client.waitForIndexing(benchmarkSchema.numberOfDocuments);
+            client.getResultBuilder().postIndexMemory(client.collectUsedMemory());
+        });
+    }
+
+    public void publishResults() {
+        clients.forEach(client -> {
+            System.out.println(client.getResultBuilder().build().toString());
+        });
+    }
 
     @Override
     public void close() {
-        jedisSearchClients.forEach(Client::close);
-        jedisClients.forEach(Jedis::close);
+        clients.forEach(BenchmarkClient::close);
     }
 }

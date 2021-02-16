@@ -1,0 +1,20 @@
+{
+  "fields": {
+    "category": {
+      "type": "tag",
+      "cardinality": 100,
+      "sortable": false,
+      "min_words": 1,
+      "max_words": 2,
+      "min_tags": 1,
+      "max_tags": 3
+    }
+  },
+  "number_of_documents": 1000,
+  "redis_endpoints": [
+    {
+      "hostname": "localhost",
+      "port": 6379
+    }
+  ]
+}

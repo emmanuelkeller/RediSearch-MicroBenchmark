@@ -4,10 +4,12 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import com.redislabs.redisearch.memorybenchmark.utils.MarkovChain;
+import io.redisearch.Schema;
 
 import java.math.BigDecimal;
 import java.math.MathContext;
 import java.text.DecimalFormat;
+import java.text.DecimalFormatSymbols;
 import java.text.NumberFormat;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -26,6 +28,8 @@ import java.util.function.Supplier;
 public interface Field {
 
     Supplier<String> createSupplier(FieldValueGenerator fieldValueGenerator);
+
+    void applySchema(String name, Schema schema);
 
     abstract class AbstractField implements Field {
 
@@ -72,6 +76,12 @@ public interface Field {
             return () -> fieldValueGenerator.generateText(fieldValueGenerator.nextRandomInt(minWords, maxWords));
         }
 
+        @Override
+        public void applySchema(String name, Schema schema) {
+            schema.addField(new Schema.TextField(name, 1.0d,
+                    sortable != null && sortable, nostem != null && nostem));
+        }
+
     }
 
     class TagField extends AbstractTextField {
@@ -110,6 +120,11 @@ public interface Field {
                 return String.join(",", tags);
             };
         }
+
+        @Override
+        public void applySchema(String name, Schema schema) {
+            schema.addField(new Schema.TagField(name, sortable != null && sortable));
+        }
     }
 
     class NumberField extends AbstractField {
@@ -140,13 +155,22 @@ public interface Field {
 
         public Supplier<String> createSupplier(FieldValueGenerator fieldValueGenerator) {
             final double step = (maxValue.doubleValue() - minValue.doubleValue()) / cardinality.doubleValue();
-            final NumberFormat nf = DecimalFormat.getNumberInstance();
-            nf.setMinimumFractionDigits(decimals == null ? 0 : decimals);
-            nf.setMaximumFractionDigits(decimals == null ? 0 : decimals);
+            final DecimalFormat df = (DecimalFormat) DecimalFormat.getNumberInstance();
+            df.setMinimumFractionDigits(decimals == null ? 0 : decimals);
+            df.setMaximumFractionDigits(decimals == null ? 0 : decimals);
+            df.setGroupingUsed(false);
             return () -> {
                 int weight = fieldValueGenerator.nextRandomInt(cardinality);
-                return nf.format(step * weight);
+                return df.format(step * weight);
             };
+        }
+
+        @Override
+        public void applySchema(String name, Schema schema) {
+            if (sortable != null && sortable)
+                schema.addSortableNumericField(name);
+            else
+                schema.addNumericField(name);
         }
     }
 }
